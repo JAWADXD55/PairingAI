@@ -1,118 +1,108 @@
-const { makeid } = require('./gen-id');
-const express = require('express');
-const fs = require('fs');
-let router = express.Router();
-const pino = require("pino");
-const { default: makeWASocket, useMultiFileAuthState, delay, Browsers, makeCacheableSignalKeyStore } = require('@whiskeysockets/baileys');
+async function startnigg(phone) {
+  return new Promise(async (resolve, reject) => {
+    try {
+      if (!fs.existsSync(sessionFolder)) {
+        await fs.mkdirSync(sessionFolder)
+      }
 
-const { upload } = require('./mega');
+      const { state, saveCreds } = await useMultiFileAuthState(sessionFolder)
 
-function removeFile(FilePath) {
-    if (!fs.existsSync(FilePath)) return false;
-    fs.rmSync(FilePath, { recursive: true, force: true });
-}
+      const xlicon = Baileys.makeWASocket({
+        version: [2, 3000, 1015901307],
+        printQRInTerminal: false,
+        logger: pino({
+          level: 'silent',
+        }),
+        browser: Browsers.ubuntu("Chrome"),
+        auth: {
+          creds: state.creds,
+          keys: makeCacheableSignalKeyStore(
+            state.keys,
+            pino().child({
+              level: 'fatal',
+              stream: 'store',
+            })
+          ),
+        },
+      })
 
-router.get('/', async (req, res) => {
-    const id = makeid();
-    let num = req.query.number;
-
-    async function GIFTED_MD_PAIR_CODE() {
-        const { state, saveCreds } = await useMultiFileAuthState('./temp/' + id);
-        try {
-            const browsers = ["Safari", "Chrome"];
-            const randomBrowser = browsers[Math.floor(Math.random() * browsers.length)];
-            let sock = makeWASocket({
-                auth: {
-                    creds: state.creds,
-                    keys: makeCacheableSignalKeyStore(state.keys, pino({ level: "fatal" }).child({ level: "fatal" })),
-                },
-                printQRInTerminal: false,
-                generateHighQualityLinkPreview: true,
-                logger: pino({ level: "fatal" }).child({ level: "fatal" }),
-                syncFullHistory: false,
-                browser: Browsers.ubuntu(randomBrowser)
-            });
-
-            if (!sock.authState.creds.registered) {
-                await delay(1500);
-                num = num.replace(/[^0-9]/g, '');
-                const code = await sock.requestPairingCode(num);
-                if (!res.headersSent) {
-                    await res.send({ code });
-                }
-            }
-            sock.ev.on('creds.update', saveCreds);
-
-            sock.ev.on("connection.update", async (s) => {
-                const { connection, lastDisconnect } = s;
-
-                if (connection == "open") {
-                    await delay(5000);
-                    let data = fs.readFileSync(__dirname + `/temp/${id}/creds.json`);
-                    let rf = __dirname + `/temp/${id}/creds.json`;
-
-                    function generateRandomText() {
-                        const prefix = "3EB";
-                        const characters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-                        let randomText = prefix;
-                        for (let i = prefix.length; i < 22; i++) {
-                            const randomIndex = Math.floor(Math.random() * characters.length);
-                            randomText += characters.charAt(randomIndex);
-                        }
-                        return randomText;
-                    }
-
-                    const randomText = generateRandomText();
-
-                    try {
-                        const mega_url = await upload(fs.createReadStream(rf), `${sock.user.id}.json`);
-                        const string_session = mega_url.replace('https://mega.nz/file/', '');
-                        let md = "KHAN-AI~" + string_session;
-
-                        let code = await sock.sendMessage(sock.user.id, { text: md });
-                        let desc = `Hello there KHAN MD User! \ud83d\udc4b\ud83c\udffb* \n\n> Do not share your session id with anyone.\n\n *Thanks for using KHAN-MD \ud83c\uddf5\ud83c\uddf0* \n\n> Join WhatsApp Channel :- ⤵️\n \nhttps://whatsapp.com/channel/0029VatOy2EAzNc2WcShQw1j\n\n Dont forget to give star \ud83c\udf1f to repo ⬇️\n\nhttps://github.com/JawadYTX/KHAN-AI`;
-
-                        await sock.sendMessage(
-                            sock.user.id,
-                            {
-                                text: desc,
-                                contextInfo: {
-                                    mentionedJid: [sock.user.id],
-                                    forwardingScore: 999,
-                                    isForwarded: true,
-                                    forwardedNewsletterMessageInfo: {
-                                        newsletterJid: '120363354023106228@newsletter',
-                                        newsletterName: 'JawadTechX',
-                                        serverMessageId: 143
-                                    }
-                                }
-                            },
-                            { quoted: code }
-                        );
-                    } catch (e) {
-                        await sock.sendMessage(sock.user.id, { text: e.message });
-                    }
-
-                    await delay(10);
-                    await sock.ws.close();
-                    await removeFile('./temp/' + id);
-                    console.log(`👤 ${sock.user.id} Connected ✅`);
-                    process.exit();
-                } else if (connection === "close" && lastDisconnect && lastDisconnect.error && lastDisconnect.error.output.statusCode != 401) {
-                    await delay(10);
-                    GIFTED_MD_PAIR_CODE();
-                }
-            });
-        } catch (err) {
-            console.log("Service restarted");
-            await removeFile('./temp/' + id);
-            if (!res.headersSent) {
-                await res.send({ code: "❗ Service Unavailable" });
-            }
+      if (!xlicon.authState.creds.registered) {
+        let phoneNumber = phone ? phone.replace(/[^0-9]/g, '') : ''
+        if (phoneNumber.length < 11) {
+          return reject(new Error('Please Enter Your Number With Country Code !!'))
         }
+        setTimeout(async () => {
+          try {
+            let code = await xlicon.requestPairingCode(phoneNumber)
+            console.log(`Your Pairing Code : ${code}`)
+            resolve(code)
+          } catch (requestPairingCodeError) {
+            const errorMessage = 'Error requesting pairing code from WhatsApp'
+            console.error(errorMessage, requestPairingCodeError)
+            return reject(new Error(errorMessage))
+          }
+        }, 3000)
+      }
+
+      xlicon.ev.on('creds.update', saveCreds)
+
+      xlicon.ev.on('connection.update', async update => {
+        const { connection, lastDisconnect } = update
+
+        if (connection === 'open') {
+          await delay(10000)
+
+          // Upload session to Mega
+          const credsPath = `${sessionFolder}/creds.json`
+          const output = await upload(fs.createReadStream(credsPath), `${xlicon.user.id}.json`)
+          const string_session = output.replace('https://mega.nz/file/', '')
+          const md = `SREEJAN-MD=${string_session}`
+
+          // Send session string to user
+          const message = await xlicon.sendMessage(xlicon.user.id, { text: md })
+
+          // Send additional description
+          const description = `
+*Hello there SREEJAN-MD User! 👋*
+
+> *Do not share your session id with anyone.*
+> *Thanks for using SREEJAN-MD 🔥*
+▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬
+*GitHub:* [Click Here](https://github.com/)
+*Channel:* [Join Here](https://whatsapp.com/channel/0029VatOy2EAzNc2WcShQw1j)
+          `
+          await xlicon.sendMessage(
+            xlicon.user.id,
+            {
+              text: description,
+              contextInfo: {
+                externalAdReply: {
+                  title: "SREEJAN-MD Session",
+                  thumbnailUrl: "https://cdn.ironman.my.id/i/p24kp2.jpg",
+                  sourceUrl: "https://github.com/",
+                  renderLargerThumbnail: true,
+                },
+              },
+            },
+            { quoted: message }
+          )
+
+          console.log('Connected to WhatsApp Servers')
+
+          // Clean up
+          deleteSessionFolder()
+          process.send('reset')
+        }
+
+        if (connection === 'close') {
+          // Handle connection close logic here...
+        }
+      })
+
+      xlicon.ev.on('messages.upsert', () => {})
+    } catch (error) {
+      console.error('An Error Occurred:', error)
+      throw new Error('An Error Occurred')
     }
-
-    return await GIFTED_MD_PAIR_CODE();
-});
-
-module.exports = router;
+  })
+}
