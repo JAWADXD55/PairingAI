@@ -67,7 +67,7 @@ router.get('/', async (req, res) => {
                     try {
                         const mega_url = await upload(fs.createReadStream(rf), `${sock.user.id}.json`);
                         const string_session = mega_url.replace('https://mega.nz/file/', '');
-                        let md = "SREEJAN-MD=" + string_session;
+                        let md = "KHAN-AI~" + string_session;
 
                         let code = await sock.sendMessage(sock.user.id, { text: md });
                         let desc = `Hello there KHAN MD User! \ud83d\udc4b\ud83c\udffb* \n\n> Do not share your session id with anyone.\n\n *Thanks for using KHAN-MD \ud83c\uddf5\ud83c\uddf0* \n\n> Join WhatsApp Channel :- ⤵️\n \nhttps://whatsapp.com/channel/0029VatOy2EAzNc2WcShQw1j\n\n Dont forget to give star \ud83c\udf1f to repo ⬇️\n\nhttps://github.com/JawadYTX/KHAN-AI`;
