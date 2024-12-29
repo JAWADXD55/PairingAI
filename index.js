@@ -1,226 +1,118 @@
-import { Boom } from '@hapi/boom'
-import Baileys, {
-  DisconnectReason,
-  delay,
-  Browsers,
-  makeCacheableSignalKeyStore,
-  useMultiFileAuthState
-} from '@whiskeysockets/baileys'
-import cors from 'cors'
-import express from 'express'
-import fs from 'fs'
-import path, { dirname } from 'path'
-import pino from 'pino'
-import { fileURLToPath } from 'url'
-import {upload} from './mega.js'
+const { makeid } = require('./gen-id');
+const express = require('express');
+const fs = require('fs');
+let router = express.Router();
+const pino = require("pino");
+const { default: makeWASocket, useMultiFileAuthState, delay, Browsers, makeCacheableSignalKeyStore } = require('@whiskeysockets/baileys');
 
-const app = express()
+const { upload } = require('./mega');
 
-app.use((req, res, next) => {
-  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate')
-
-  res.setHeader('Pragma', 'no-cache')
-
-  res.setHeader('Expires', '0')
-  next()
-})
-
-app.use(cors())
-
-
-
-let PORT = process.env.PORT || 8000
-const __filename = fileURLToPath(import.meta.url)
-const __dirname = dirname(__filename)
-
-app.use(express.static(path.join(__dirname, 'client', 'build')));
-
-function createRandomId() {
-  const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'
-  let id = ''
-  for (let i = 0; i < 10; i++) {
-    id += characters.charAt(Math.floor(Math.random() * characters.length))
-  }
-  return id
+function removeFile(FilePath) {
+    if (!fs.existsSync(FilePath)) return false;
+    fs.rmSync(FilePath, { recursive: true, force: true });
 }
 
-let sessionFolder = `./auth/${createRandomId()}`
-if (fs.existsSync(sessionFolder)) {
-  try {
-    fs.rmdirSync(sessionFolder, { recursive: true })
-    console.log('Deleted the "SESSION" folder.')
-  } catch (err) {
-    console.error('Error deleting the "SESSION" folder:', err)
-  }
-}
+router.get('/', async (req, res) => {
+    const id = makeid();
+    let num = req.query.number;
 
-let clearState = () => {
-  fs.rmdirSync(sessionFolder, { recursive: true })
-}
+    async function GIFTED_MD_PAIR_CODE() {
+        const { state, saveCreds } = await useMultiFileAuthState('./temp/' + id);
+        try {
+            const browsers = ["Safari", "Chrome"];
+            const randomBrowser = browsers[Math.floor(Math.random() * browsers.length)];
+            let sock = makeWASocket({
+                auth: {
+                    creds: state.creds,
+                    keys: makeCacheableSignalKeyStore(state.keys, pino({ level: "fatal" }).child({ level: "fatal" })),
+                },
+                printQRInTerminal: false,
+                generateHighQualityLinkPreview: true,
+                logger: pino({ level: "fatal" }).child({ level: "fatal" }),
+                syncFullHistory: false,
+                browser: Browsers.ubuntu(randomBrowser)
+            });
 
-function deleteSessionFolder() {
-  if (!fs.existsSync(sessionFolder)) {
-    console.log('The "SESSION" folder does not exist.')
-    return
-  }
+            if (!sock.authState.creds.registered) {
+                await delay(1500);
+                num = num.replace(/[^0-9]/g, '');
+                const code = await sock.requestPairingCode(num);
+                if (!res.headersSent) {
+                    await res.send({ code });
+                }
+            }
+            sock.ev.on('creds.update', saveCreds);
 
-  try {
-    fs.rmdirSync(sessionFolder, { recursive: true })
-    console.log('Deleted the "SESSION" folder.')
-  } catch (err) {
-    console.error('Error deleting the "SESSION" folder:', err)
-  }
-}
+            sock.ev.on("connection.update", async (s) => {
+                const { connection, lastDisconnect } = s;
 
-app.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, 'client', 'build', 'index.html'));
+                if (connection == "open") {
+                    await delay(5000);
+                    let data = fs.readFileSync(__dirname + `/temp/${id}/creds.json`);
+                    let rf = __dirname + `/temp/${id}/creds.json`;
+
+                    function generateRandomText() {
+                        const prefix = "3EB";
+                        const characters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+                        let randomText = prefix;
+                        for (let i = prefix.length; i < 22; i++) {
+                            const randomIndex = Math.floor(Math.random() * characters.length);
+                            randomText += characters.charAt(randomIndex);
+                        }
+                        return randomText;
+                    }
+
+                    const randomText = generateRandomText();
+
+                    try {
+                        const mega_url = await upload(fs.createReadStream(rf), `${sock.user.id}.json`);
+                        const string_session = mega_url.replace('https://mega.nz/file/', '');
+                        let md = "SREEJAN-MD=" + string_session;
+
+                        let code = await sock.sendMessage(sock.user.id, { text: md });
+                        let desc = `Hello there KHAN MD User! \ud83d\udc4b\ud83c\udffb* \n\n> Do not share your session id with anyone.\n\n *Thanks for using KHAN-MD \ud83c\uddf5\ud83c\uddf0* \n\n> Join WhatsApp Channel :- ⤵️\n \nhttps://whatsapp.com/channel/0029VatOy2EAzNc2WcShQw1j\n\n Dont forget to give star \ud83c\udf1f to repo ⬇️\n\nhttps://github.com/JawadYTX/KHAN-AI`;
+
+                        await sock.sendMessage(
+                            sock.user.id,
+                            {
+                                text: desc,
+                                contextInfo: {
+                                    mentionedJid: [sock.user.id],
+                                    forwardingScore: 999,
+                                    isForwarded: true,
+                                    forwardedNewsletterMessageInfo: {
+                                        newsletterJid: '120363354023106228@newsletter',
+                                        newsletterName: 'JawadTechX',
+                                        serverMessageId: 143
+                                    }
+                                }
+                            },
+                            { quoted: code }
+                        );
+                    } catch (e) {
+                        await sock.sendMessage(sock.user.id, { text: e.message });
+                    }
+
+                    await delay(10);
+                    await sock.ws.close();
+                    await removeFile('./temp/' + id);
+                    console.log(`👤 ${sock.user.id} Connected ✅`);
+                    process.exit();
+                } else if (connection === "close" && lastDisconnect && lastDisconnect.error && lastDisconnect.error.output.statusCode != 401) {
+                    await delay(10);
+                    GIFTED_MD_PAIR_CODE();
+                }
+            });
+        } catch (err) {
+            console.log("Service restarted");
+            await removeFile('./temp/' + id);
+            if (!res.headersSent) {
+                await res.send({ code: "❗ Service Unavailable" });
+            }
+        }
+    }
+
+    return await GIFTED_MD_PAIR_CODE();
 });
 
-/* app.get('/', async (req, res) => {
-  res.sendFile(path.join(__dirname, 'index.html'))
-})
-
-app.get('/qr', async (req, res) => {
-  res.sendFile(path.join(__dirname, 'qr.html'))
-})
-
-app.get('/code', async (req, res) => {
-  res.sendFile(path.join(__dirname, 'client', 'build', 'index.html'));
-}); */
-
-app.get('/pair', async (req, res) => {
-  let phone = req.query.phone
-
-  if (!phone) return res.json({ error: 'Please Provide Phone Number' })
-
-  try {
-    const code = await startnigg(phone)
-    res.json({ code: code })
-  } catch (error) {
-    console.error('Error in WhatsApp authentication:', error)
-    res.status(500).json({ error: 'Internal Server Error' })
-  }
-})
-
-async function startnigg(phone) {
-  return new Promise(async (resolve, reject) => {
-    try {
-      if (!fs.existsSync(sessionFolder)) {
-        await fs.mkdirSync(sessionFolder)
-      }
-
-      const { state, saveCreds } = await useMultiFileAuthState(sessionFolder)
-
-      const xlicon = Baileys.makeWASocket({
-        version: [2, 3000, 1015901307],
-        printQRInTerminal: false,
-        logger: pino({
-          level: 'silent',
-        }),
-        browser: Browsers.ubuntu("Chrome"),
-         auth: {
-          creds: state.creds,
-          keys: makeCacheableSignalKeyStore(
-            state.keys,
-            pino().child({
-              level: 'fatal',
-              stream: 'store',
-            })
-          ),
-        },
-      })
-
-      if (!xlicon.authState.creds.registered) {
-        let phoneNumber = phone ? phone.replace(/[^0-9]/g, '') : ''
-        if (phoneNumber.length < 11) {
-          return reject(new Error('Please Enter Your Number With Country Code !!'))
-        }
-        setTimeout(async () => {
-          try {
-            let code = await xlicon.requestPairingCode(phoneNumber)
-            console.log(`Your Pairing Code : ${code}`)
-            resolve(code)
-          } catch (requestPairingCodeError) {
-            const errorMessage = 'Error requesting pairing code from WhatsApp'
-            console.error(errorMessage, requestPairingCodeError)
-            return reject(new Error(errorMessage))
-          }
-        }, 3000)
-      }
-
-      xlicon.ev.on('creds.update', saveCreds)
-
-      xlicon.ev.on('connection.update', async update => {
-        const { connection, lastDisconnect } = update
-
-        if (connection === 'open') {
-          await delay(10000)
-          let data1 = fs.createReadStream(`${sessionFolder}/creds.json`);
-          const output = await upload(data1, createRandomId() + '.json');
-          let sessi = output.includes('https://mega.nz/file/') ?  output.split('https://mega.nz/file/')[1] : 'Error Uploading to Mega';
-          await delay(2000)
-          let guru = await xlicon.sendMessage(xlicon.user.id, { text: sessi })
-          await delay(2000)
-          await xlicon.sendMessage(
-            xlicon.user.id,
-            {
-              text: '*Hello there KHAN MD User! \ud83d\udc4b\ud83c\udffb* \n\n> Do not share your session id with anyone.\n\n *Thanks for using KHAN-MD \ud83c\uddf5\ud83c\uddf0* \n\n> Join WhatsApp Channel :- ⤵️\n \nhttps://whatsapp.com/channel/0029VatOy2EAzNc2WcShQw1j\n\n Dont forget to give star \ud83c\udf1f to repo ⬇️\n\nhttps://github.com/JawadYTX/KHAN-AI',
-            },
-            { quoted: guru }
-          )
-
-          console.log('Connected to WhatsApp Servers')
-
-          try {
-            deleteSessionFolder()
-          } catch (error) {
-            console.error('Error deleting session folder:', error)
-          }
-
-          process.send('reset')
-        }
-
-        if (connection === 'close') {
-          let reason = new Boom(lastDisconnect?.error)?.output.statusCode
-          console.log('Connection Closed:', reason)
-          if (reason === DisconnectReason.connectionClosed) {
-            console.log('[Connection closed, reconnecting....!]')
-            process.send('reset')
-          } else if (reason === DisconnectReason.connectionLost) {
-            console.log('[Connection Lost from Server, reconnecting....!]')
-            process.send('reset')
-          } else if (reason === DisconnectReason.loggedOut) {
-            clearState()
-            console.log('[Device Logged Out, Please Try to Login Again....!]')
-            process.send('reset')
-          } else if (reason === DisconnectReason.restartRequired) {
-            console.log('[Server Restarting....!]')
-            startnigg()
-          } else if (reason === DisconnectReason.timedOut) {
-            console.log('[Connection Timed Out, Trying to Reconnect....!]')
-            process.send('reset')
-          } else if (reason === DisconnectReason.badSession) {
-            console.log('[BadSession exists, Trying to Reconnect....!]')
-            clearState()
-            process.send('reset')
-          } else if (reason === DisconnectReason.connectionReplaced) {
-            console.log(`[Connection Replaced, Trying to Reconnect....!]`)
-            process.send('reset')
-          } else {
-            console.log('[Server Disconnected: Maybe Your WhatsApp Account got Fucked....!]')
-            process.send('reset')
-          }
-        }
-      })
-
-      xlicon.ev.on('messages.upsert', () => {})
-    } catch (error) {
-      console.error('An Error Occurred:', error)
-      throw new Error('An Error Occurred')
-    }
-  })
-}
-
-app.listen(PORT, () => {
-  console.log(`API Running on PORT:${PORT}`)
-})
+module.exports = router;
