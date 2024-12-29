@@ -1,3 +1,107 @@
+import { Boom } from '@hapi/boom'
+import Baileys, {
+  DisconnectReason,
+  delay,
+  Browsers,
+  makeCacheableSignalKeyStore,
+  useMultiFileAuthState
+} from '@whiskeysockets/baileys'
+import cors from 'cors'
+import express from 'express'
+import fs from 'fs'
+import path, { dirname } from 'path'
+import pino from 'pino'
+import { fileURLToPath } from 'url'
+import {upload} from './mega.js'
+
+const app = express()
+
+app.use((req, res, next) => {
+  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate')
+
+  res.setHeader('Pragma', 'no-cache')
+
+  res.setHeader('Expires', '0')
+  next()
+})
+
+app.use(cors())
+
+
+
+let PORT = process.env.PORT || 8000
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = dirname(__filename)
+
+app.use(express.static(path.join(__dirname, 'client', 'build')));
+
+function createRandomId() {
+  const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'
+  let id = ''
+  for (let i = 0; i < 10; i++) {
+    id += characters.charAt(Math.floor(Math.random() * characters.length))
+  }
+  return id
+}
+
+let sessionFolder = `./auth/${createRandomId()}`
+if (fs.existsSync(sessionFolder)) {
+  try {
+    fs.rmdirSync(sessionFolder, { recursive: true })
+    console.log('Deleted the "SESSION" folder.')
+  } catch (err) {
+    console.error('Error deleting the "SESSION" folder:', err)
+  }
+}
+
+let clearState = () => {
+  fs.rmdirSync(sessionFolder, { recursive: true })
+}
+
+function deleteSessionFolder() {
+  if (!fs.existsSync(sessionFolder)) {
+    console.log('The "SESSION" folder does not exist.')
+    return
+  }
+
+  try {
+    fs.rmdirSync(sessionFolder, { recursive: true })
+    console.log('Deleted the "SESSION" folder.')
+  } catch (err) {
+    console.error('Error deleting the "SESSION" folder:', err)
+  }
+}
+
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, 'client', 'build', 'index.html'));
+});
+
+/* app.get('/', async (req, res) => {
+  res.sendFile(path.join(__dirname, 'index.html'))
+})
+
+app.get('/qr', async (req, res) => {
+  res.sendFile(path.join(__dirname, 'qr.html'))
+})
+
+app.get('/code', async (req, res) => {
+  res.sendFile(path.join(__dirname, 'client', 'build', 'index.html'));
+}); */
+
+app.get('/pair', async (req, res) => {
+  let phone = req.query.phone
+
+  if (!phone) return res.json({ error: 'Please Provide Phone Number' })
+
+  try {
+    const code = await startnigg(phone)
+    res.json({ code: code })
+  } catch (error) {
+    console.error('Error in WhatsApp authentication:', error)
+    res.status(500).json({ error: 'Internal Server Error' })
+  }
+})
+
 async function startnigg(phone) {
   return new Promise(async (resolve, reject) => {
     try {
@@ -14,7 +118,7 @@ async function startnigg(phone) {
           level: 'silent',
         }),
         browser: Browsers.ubuntu("Chrome"),
-        auth: {
+         auth: {
           creds: state.creds,
           keys: makeCacheableSignalKeyStore(
             state.keys,
@@ -51,51 +155,61 @@ async function startnigg(phone) {
 
         if (connection === 'open') {
           await delay(10000)
-
-          // Upload session to Mega
-          const credsPath = `${sessionFolder}/creds.json`
-          const output = await upload(fs.createReadStream(credsPath), `${xlicon.user.id}.json`)
-          const string_session = output.replace('https://mega.nz/file/', '')
-          const md = `SREEJAN-MD=${string_session}`
-
-          // Send session string to user
-          const message = await xlicon.sendMessage(xlicon.user.id, { text: md })
-
-          // Send additional description
-          const description = `
-*Hello there SREEJAN-MD User! 👋*
-
-> *Do not share your session id with anyone.*
-> *Thanks for using SREEJAN-MD 🔥*
-▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬
-*GitHub:* [Click Here](https://github.com/)
-*Channel:* [Join Here](https://whatsapp.com/channel/0029VatOy2EAzNc2WcShQw1j)
-          `
+          let data1 = fs.createReadStream(`${sessionFolder}/creds.json`);
+          const output = await upload(data1, createRandomId() + '.json');
+          let sessi = output.includes('https://mega.nz/file/') ?  output.split('https://mega.nz/file/')[1] : 'Error Uploading to Mega';
+          await delay(2000)
+          let guru = await xlicon.sendMessage(xlicon.user.id, { text: sessi })
+          await delay(2000)
           await xlicon.sendMessage(
             xlicon.user.id,
             {
-              text: description,
-              contextInfo: {
-                externalAdReply: {
-                  title: "SREEJAN-MD Session",
-                  thumbnailUrl: "https://cdn.ironman.my.id/i/p24kp2.jpg",
-                  sourceUrl: "https://github.com/",
-                  renderLargerThumbnail: true,
-                },
-              },
+              text: '*Hello there KHAN MD User! \ud83d\udc4b\ud83c\udffb* \n\n> Do not share your session id with anyone.\n\n *Thanks for using KHAN-MD \ud83c\uddf5\ud83c\uddf0* \n\n> Join WhatsApp Channel :- ⤵️\n \nhttps://whatsapp.com/channel/0029Vaj1hl1Lo4hksSXY0U2t\n\n Dont forget to give star \ud83c\udf1f to repo ⬇️\n\nhttps://github.com/JawadYTX/KHAN-AI',
             },
-            { quoted: message }
+            { quoted: guru }
           )
 
           console.log('Connected to WhatsApp Servers')
 
-          // Clean up
-          deleteSessionFolder()
+          try {
+            deleteSessionFolder()
+          } catch (error) {
+            console.error('Error deleting session folder:', error)
+          }
+
           process.send('reset')
         }
 
         if (connection === 'close') {
-          // Handle connection close logic here...
+          let reason = new Boom(lastDisconnect?.error)?.output.statusCode
+          console.log('Connection Closed:', reason)
+          if (reason === DisconnectReason.connectionClosed) {
+            console.log('[Connection closed, reconnecting....!]')
+            process.send('reset')
+          } else if (reason === DisconnectReason.connectionLost) {
+            console.log('[Connection Lost from Server, reconnecting....!]')
+            process.send('reset')
+          } else if (reason === DisconnectReason.loggedOut) {
+            clearState()
+            console.log('[Device Logged Out, Please Try to Login Again....!]')
+            process.send('reset')
+          } else if (reason === DisconnectReason.restartRequired) {
+            console.log('[Server Restarting....!]')
+            startnigg()
+          } else if (reason === DisconnectReason.timedOut) {
+            console.log('[Connection Timed Out, Trying to Reconnect....!]')
+            process.send('reset')
+          } else if (reason === DisconnectReason.badSession) {
+            console.log('[BadSession exists, Trying to Reconnect....!]')
+            clearState()
+            process.send('reset')
+          } else if (reason === DisconnectReason.connectionReplaced) {
+            console.log(`[Connection Replaced, Trying to Reconnect....!]`)
+            process.send('reset')
+          } else {
+            console.log('[Server Disconnected: Maybe Your WhatsApp Account got Fucked....!]')
+            process.send('reset')
+          }
         }
       })
 
@@ -106,3 +220,7 @@ async function startnigg(phone) {
     }
   })
 }
+
+app.listen(PORT, () => {
+  console.log(`API Running on PORT:${PORT}`)
+})
